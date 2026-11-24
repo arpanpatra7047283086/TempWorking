@@ -69,11 +69,12 @@ const otpHash = (email, code) => sign(`otp:${email}:${code}`);
 
 export async function issueSession(identity) {
   if (!secret || secret.length < 32) throw new Error("AUTH_SECRET must contain at least 32 characters.");
+  const sessionLifetimeSeconds = 60 * 60 * 24 * 365;
   const now = Math.floor(Date.now() / 1000);
-  const payload = Buffer.from(JSON.stringify({ ...identity, iat: now, exp: now + 60 * 60 * 12 })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ ...identity, iat: now, exp: now + sessionLifetimeSeconds })).toString("base64url");
   const token = `${payload}.${sign(payload)}`;
   const jar = await cookies();
-  jar.set("ss_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 12 });
+  jar.set("ss_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: sessionLifetimeSeconds });
 }
 
 export async function currentIdentity() {
