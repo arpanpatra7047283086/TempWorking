@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: kali-ai-frontend
+    runtime: node
+    rootDir: .
+    buildCommand: corepack enable && pnpm install && pnpm build:inventory
+    startCommand: pnpm exec next start --port $PORT
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        sync: false
+      - key: AUTH_SECRET
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD_HASH
+        sync: false
+      - key: APPS_SCRIPT_EMAIL_API_URL
+        sync: false
+      - key: APPS_SCRIPT_API_KEY
+        sync: false

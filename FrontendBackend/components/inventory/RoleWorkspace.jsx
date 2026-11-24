@@ -1,0 +1,7 @@
+"use client";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import useSWR from "swr";
+import InventoryWorkspace from "./InventoryWorkspace.jsx";
+const fetcher = async (url) => { const response = await fetch(url, { cache: "no-store" }); if (response.status === 401) return null; const data = await response.json(); if (!response.ok) throw new Error(data.error || "Unable to verify session."); return data.user; };
+export default function RoleWorkspace({ role }) { const router = useRouter(); const { data: user, error, isLoading, mutate } = useSWR("/api/auth/me", fetcher, { shouldRetryOnError: false, revalidateOnFocus: false }); useEffect(() => { if (user === null) router.replace("/login"); if (user && user.role !== role) router.replace(user.role === "SUPER_ADMIN" ? "/admin" : "/employee"); }, [role, router, user]); async function signOut() { await fetch("/api/auth/logout", { method: "POST" }); await mutate(null, false); router.replace("/"); } if (error) return <main className="auth-loading"><p role="alert">{error.message}</p><button className="primary-button" type="button" onClick={() => mutate()}>Try again</button></main>; if (isLoading || user === undefined || user === null || user?.role !== role) return <main className="auth-loading"><span className="spinner" />Opening your workspace…</main>; return <InventoryWorkspace user={user} onSignOut={signOut} />; }

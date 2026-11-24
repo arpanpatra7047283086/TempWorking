@@ -1,0 +1,14 @@
+import Link from "next/link";
+import { ArrowRight, CheckCircle2, ClipboardCheck, PackageCheck, ShieldCheck, Store } from "lucide-react";
+import styles from "../app/home.module.css";
+
+const content = {
+  about: { eyebrow: "ABOUT SS SUPPLEMENT", title: <>Built for healthier<br /><em>daily operations.</em></>, intro: "SS Supplement gives growing supplement businesses a reliable operating system for stock, people, and store performance.", cards: [[Store, "Every location connected", "See what is happening at each shop without jumping between spreadsheets."], [PackageCheck, "Stock you can trust", "Track quantities, batches, cost, and expiry dates in one consistent system."], [ShieldCheck, "People-first access", "Give each employee only the tools and stores they need for their work."]] },
+  faqs: { eyebrow: "SUPPORT", title: <>Questions,<br /><em>answered.</em></>, intro: "Quick answers about SS Supplement operations, access, inventory, and store management.", cards: [[ClipboardCheck, "How do I add stock?", "Admin users can create products and record stock-in purchases from the Inventory workspace."], [Store, "Can employees see every shop?", "No. Employees only see the locations and permissions assigned to their account."], [ShieldCheck, "How is access protected?", "Each sign-in uses your password and an email verification code before opening the workspace."]] },
+  contact: { eyebrow: "CONTACT SS SUPPLEMENT", title: <>Let’s make your<br /><em>operations simpler.</em></>, intro: "Need help with your stores, access, or inventory setup? Your SS Supplement administrator can help you get started.", cards: [[PackageCheck, "Inventory support", "Get help setting up products, batches, expiry tracking, and stock movements."], [Store, "Store operations", "Keep your locations and team assignments organized as you grow."], [ShieldCheck, "Account access", "Admins can invite employees, reset access, and manage permissions securely."]] },
+};
+
+export default function MarketingInfo({ page }) {
+  const item = content[page];
+  return <main className={styles.page}><nav className={styles.nav}><Link className={styles.brand} href="/"><span>SS</span><div><strong>SS SUPPLEMENT</strong><small>STORE OPERATIONS</small></div></Link><div className={styles.links}><Link href="/about">About</Link><Link href="/faqs">FAQs</Link><Link href="/contact">Support</Link></div><Link className={styles.login} href="/login">Log in <ArrowRight size={16} /></Link></nav><section className={styles.infoHero}><p className={styles.eyebrow}><i /> {item.eyebrow}</p><h1>{item.title}</h1><p>{item.intro}</p><Link className={styles.primary} href="/login">Open your workspace <ArrowRight size={18} /></Link></section><section className={styles.infoGrid}>{item.cards.map(([Icon, title, copy]) => <article key={title}><Icon /><h2>{title}</h2><p>{copy}</p><CheckCircle2 size={17} /></article>)}</section></main>;
+}
