@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, AlertTriangle, ArrowDownToLine, ArrowLeftRight, ArrowUpRight, Boxes, Building2, ChevronDown, CircleDollarSign, ClipboardList, LogOut, Package, Plus, Search, ShoppingCart, Users, X } from "lucide-react";
 
 const fetcher = async (url) => { const response = await fetch(url, { cache: "no-store" }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Could not load inventory."); return data; };
@@ -21,6 +21,8 @@ const navItems = [
 
 export default function InventoryWorkspace({ user, onSignOut }) {
   const [section, setSection] = useState("overview");
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef(null);
   const [shopId, setShopId] = useState("");
   const [query, setQuery] = useState("");
   const [expiryFilter, setExpiryFilter] = useState("30");
@@ -36,6 +38,22 @@ export default function InventoryWorkspace({ user, onSignOut }) {
   const [dialogError, setDialogError] = useState("");
   const [busy, setBusy] = useState(false);
   const { data, error, isLoading, mutate } = useSWR(`/api/inventory${shopId ? `?shopId=${encodeURIComponent(shopId)}` : ""}`, fetcher, { revalidateOnFocus: true });
+
+  useEffect(() => {
+    if (!accountOpen) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!accountRef.current?.contains(event.target)) setAccountOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setAccountOpen(false);
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [accountOpen]);
   const { data: employeeData, mutate: mutateEmployees } = useSWR(section === "employees" && user.role === "SUPER_ADMIN" ? "/api/employees" : null, fetcher, { revalidateOnFocus: true });
   const { data: transferData, mutate: mutateTransfers } = useSWR(section === "transfers" && user.role === "SUPER_ADMIN" ? "/api/transfers" : null, fetcher, { revalidateOnFocus: true });
   const { data: auditData } = useSWR(section === "transactions" && user.role === "SUPER_ADMIN" ? `/api/audit?page=${auditPage}${shopId ? `&shopId=${encodeURIComponent(shopId)}` : ""}` : null, fetcher, { revalidateOnFocus: true });
@@ -165,7 +183,7 @@ export default function InventoryWorkspace({ user, onSignOut }) {
       </aside>
 
       <main className="inventory-main">
-        <header className="inventory-topbar"><div className="crumb">SS Supplement <span>/</span> <strong>{visibleNav.find((item) => item.id === section)?.label || "Overview"}</strong></div><div className="topbar-actions"><span className="secure-indicator"><i /> Secure workspace</span><button className="avatar-small" type="button" onClick={onSignOut} title="Sign out">{(user.name || "S").slice(0, 1).toUpperCase()}</button></div></header>
+        <header className="inventory-topbar"><div className="crumb">SS Supplement <span>/</span> <strong>{visibleNav.find((item) => item.id === section)?.label || "Overview"}</strong></div><div className="topbar-actions"><span className="secure-indicator"><i /> Secure workspace</span><div className="inventory-account-wrap" ref={accountRef}><button className="inventory-account-button" type="button" aria-expanded={accountOpen} aria-controls="inventory-account-menu" onClick={() => setAccountOpen((open) => !open)}><span><strong>{user.name || user.email || "Your account"}</strong><small>Product workspace</small></span><ChevronDown size={17} aria-hidden="true" /></button>{accountOpen && <div className="inventory-account-menu" id="inventory-account-menu"><p className="inventory-account-label">Your account</p><p className="inventory-account-email">{user.email || (user.role === "SUPER_ADMIN" ? "Super Admin" : "Shop Employee")}</p><a href="/" onClick={() => setAccountOpen(false)}>Home</a><button className="inventory-account-signout" type="button" onClick={() => { setAccountOpen(false); onSignOut(); }}><LogOut size={16} aria-hidden="true" /> Sign out</button></div>}</div></div></header>
         <div className="page-content">
           <div className="page-heading"><div><p className="eyebrow">{activeShop?.name || (user.role === "SUPER_ADMIN" ? "BUSINESS OVERVIEW" : "YOUR STORE")}</p><h1>{section === "overview" ? "Good business starts here." : section === "shops" ? "Store locations" : section === "employees" ? "Team access" : section === "transfers" ? "Stock transfers" : section === "inventory" ? "Inventory" : section === "billing" ? "Billing & sales" : section === "expiry" ? "Expiry management" : "Recent activity"}</h1><p className="heading-subtitle">{section === "overview" ? "A live view of stock and performance across your stores." : section === "shops" ? "Review store locations and their current operations." : section === "employees" ? "Invite teammates and manage their shop permissions." : section === "transfers" ? "Dispatch and receive stock between store locations." : section === "inventory" ? "Batch-level quantities, cost, and expiry at a glance." : section === "billing" ? "Review shop sales, revenue, and customer invoices." : section === "expiry" ? "Review expiring batches before they reach the shelf." : "A traceable record of recent inventory changes."}</p></div><div className="heading-actions"><span className="date-chip">{new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(new Date())}</span>{user.role === "SUPER_ADMIN" && section === "shops" && <button className="primary-button" type="button" onClick={() => setDialog("create-shop")}><Plus size={16} /> Add shop</button>}{user.role === "SUPER_ADMIN" && section === "employees" && <button className="primary-button" type="button" onClick={() => setDialog("create-employee")}><Plus size={16} /> Add employee</button>}{user.role === "SUPER_ADMIN" && section === "transfers" && <button className="primary-button" type="button" onClick={() => setDialog("transfer")}><Plus size={16} /> New transfer</button>}{section === "expiry" && <button className="outline-button" type="button" onClick={exportExpiryRows}>Export CSV</button>}{section === "inventory" && (user.role === "SUPER_ADMIN" || user.permissions?.includes("inventory")) && <button className="primary-button" type="button" onClick={() => setDialog("create-product")}><Plus size={16} /> Add product</button>}</div></div>
 

@@ -19,9 +19,28 @@ function directMongoUri(value) {
 const uri = directMongoUri(process.env.MONGODB_URI_2 || process.env.MONGODB_CONNECTION_STRING || process.env.MONGODB_URI);
 const databaseName = process.env.MONGODB_DB_3 || process.env.MONGODB_DB;
 const secret = process.env.AUTH_SECRET_3 || process.env.AUTH_SECRET;
-export const adminEmail = String(process.env.ADMIN_EMAIL_3 || process.env.ADMIN_EMAIL || "").trim().toLowerCase();
-export const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH_3 || process.env.ADMIN_PASSWORD_HASH;
+export const adminEmail = String(process.env.ADMIN_EMAIL || process.env.ADMIN_EMAIL_3 || "").trim().toLowerCase();
+export const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH || process.env.ADMIN_PASSWORD_HASH_3;
 let clientPromise;
+
+export async function adminCredentialForEmail(email) {
+  const collection = (await database()).collection("admin_credentials");
+  let credential = await collection.findOne({ email }, { projection: { email: 1, passwordHash: 1 } });
+  if (credential) return credential;
+  if (email !== adminEmail || !/^\$2[aby]\$/.test(adminPasswordHash || "")) return null;
+
+  try {
+    await collection.updateOne(
+      { _id: "primary" },
+      { $setOnInsert: { email: adminEmail, passwordHash: adminPasswordHash, createdAt: new Date() } },
+      { upsert: true },
+    );
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+  }
+  credential = await collection.findOne({ email }, { projection: { email: 1, passwordHash: 1 } });
+  return credential || null;
+}
 
 export function database() {
   if (!uri || !databaseName) throw new Error("MongoDB server configuration is missing.");
@@ -50,11 +69,12 @@ const otpHash = (email, code) => sign(`otp:${email}:${code}`);
 
 export async function issueSession(identity) {
   if (!secret || secret.length < 32) throw new Error("AUTH_SECRET must contain at least 32 characters.");
+  const sessionLifetimeSeconds = 60 * 60 * 24 * 365;
   const now = Math.floor(Date.now() / 1000);
-  const payload = Buffer.from(JSON.stringify({ ...identity, iat: now, exp: now + 60 * 60 * 12 })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ ...identity, iat: now, exp: now + sessionLifetimeSeconds })).toString("base64url");
   const token = `${payload}.${sign(payload)}`;
   const jar = await cookies();
-  jar.set("ss_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 12 });
+  jar.set("ss_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: sessionLifetimeSeconds });
 }
 
 export async function currentIdentity() {

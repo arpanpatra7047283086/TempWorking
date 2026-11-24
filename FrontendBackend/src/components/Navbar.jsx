@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
+import useSWR from "swr";
 import { ArrowUpRight, ChevronDown, LogOut, Menu, MessageCircle, X } from "lucide-react";
 import Logo from "./Logo.jsx";
 import { useUI } from "../context/UIContext.jsx";
@@ -18,10 +19,23 @@ function navClass({ isActive }) {
   return `${linkBase} ${isActive ? "text-cream" : "text-cream/65 hover:text-cream"}`;
 }
 
+async function fetchServerSession(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (response.status === 401) return null;
+  if (!response.ok) throw new Error("Unable to check your account session.");
+  const data = await response.json();
+  return data.user || null;
+}
+
 export default function Navbar() {
   const { openWorkspace, openChat } = useUI();
-  const { user, signOut } = useAuth();
+  const { user: legacyUser, signOut } = useAuth();
   const { pathname } = useLocation();
+  const { data: serverUser, mutate: mutateServerUser } = useSWR("/api/auth/me", fetchServerSession, {
+    revalidateOnFocus: true,
+    shouldRetryOnError: false,
+  });
+  const activeUser = legacyUser || serverUser || null;
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -31,7 +45,10 @@ export default function Navbar() {
   const profileRef = useRef(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!legacyUser) {
+      setProfileAvatar("");
+      return undefined;
+    }
     let active = true;
     getProfile()
       .then((profile) => {
@@ -48,7 +65,7 @@ export default function Navbar() {
       active = false;
       window.removeEventListener("upolabdhi-avatar-updated", onAvatarUpdated);
     };
-  }, [user]);
+  }, [legacyUser]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -96,6 +113,17 @@ export default function Navbar() {
       document.removeEventListener("keydown", onKey);
     };
   }, [profileOpen]);
+
+  const handleSignOut = async () => {
+    setProfileOpen(false);
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+    } catch {
+      // Clear the client-side session even if the server cannot be reached.
+    }
+    signOut();
+    await mutateServerUser(null, false);
+  };
 
   const aboutActive = pathname === "/about" || pathname === "/contact";
 
@@ -180,32 +208,29 @@ export default function Navbar() {
         </ul>
 
         <div className="flex items-center gap-2.5">
-          {user ? (
+          {activeUser ? (
             <div ref={profileRef} className="relative hidden sm:block">
               <button
                 type="button"
                 aria-expanded={profileOpen}
+                aria-controls="home-account-menu"
                 onClick={() => setProfileOpen((value) => !value)}
-                className="flex items-center gap-3 rounded-full bg-ink/80 py-1.5 pr-2 pl-1.5 text-left text-cream transition-colors hover:bg-ink"
+                className="flex min-w-48 items-center justify-between gap-5 rounded-full bg-ink/80 px-5 py-2.5 text-left text-cream transition-colors hover:bg-ink"
               >
-                <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-mint text-sm font-bold text-ink">
-                  {profileAvatar
-                    ? <img className="size-full object-cover" src={profileAvatar} alt="" />
-                    : (user?.name || user?.email || "U").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
-                </span>
                 <span className="min-w-0">
-                  <strong className="block max-w-36 truncate text-sm leading-tight">{user?.name || "Your account"}</strong>
+                  <strong className="block max-w-40 truncate text-sm leading-tight">{activeUser?.name || "Your account"}</strong>
                   <small className="mt-1 block text-[11px] text-cream/55">Product workspace</small>
                 </span>
-                <ChevronDown className={`mr-1 size-4 text-cream/60 transition-transform ${profileOpen ? "rotate-180" : ""}`} />
+                <ChevronDown className={`size-4 shrink-0 text-cream/60 transition-transform ${profileOpen ? "rotate-180" : ""}`} />
               </button>
               {profileOpen && (
-                <div className="pop-in absolute right-0 top-full mt-3 w-56 rounded-2xl border border-cream/10 bg-ink-2/95 p-2 shadow-2xl backdrop-blur-xl">
-                  <Link to="/" onClick={() => setProfileOpen(false)} className="block rounded-xl px-3 py-2.5 text-sm text-cream hover:bg-cream/5">Home</Link>
-                  <Link to="/workspace" onClick={() => setProfileOpen(false)} className="block rounded-xl px-3 py-2.5 text-sm text-cream hover:bg-cream/5">Dashboard</Link>
-                  <Link to="/workspace#profile" onClick={() => setProfileOpen(false)} className="block rounded-xl px-3 py-2.5 text-sm text-cream hover:bg-cream/5">Profile</Link>
-                  <Link to="/workspace#settings" onClick={() => setProfileOpen(false)} className="block rounded-xl px-3 py-2.5 text-sm text-cream hover:bg-cream/5">Settings</Link>
-                  <button type="button" onClick={() => { setProfileOpen(false); signOut(); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-red-300 hover:bg-cream/5"><LogOut className="size-4" /> Sign out</button>
+                <div id="home-account-menu" className="pop-in absolute right-0 top-full mt-3 w-64 rounded-2xl border border-ink/10 bg-paper p-2 text-ink shadow-2xl">
+                  <p className="px-3 py-2 text-xs font-bold tracking-[0.14em] text-ink/55 uppercase">Your account</p>
+                  <Link to="/" onClick={() => setProfileOpen(false)} className="block rounded-xl px-3 py-2.5 text-sm hover:bg-ink/5">Home</Link>
+                  <Link to="/workspace" onClick={() => setProfileOpen(false)} className="block rounded-xl px-3 py-2.5 text-sm hover:bg-ink/5">Dashboard</Link>
+                  <Link to="/workspace#profile" onClick={() => setProfileOpen(false)} className="block rounded-xl px-3 py-2.5 text-sm hover:bg-ink/5">Profile</Link>
+                  <Link to="/workspace#settings" onClick={() => setProfileOpen(false)} className="block rounded-xl px-3 py-2.5 text-sm hover:bg-ink/5">Settings</Link>
+                  <button type="button" onClick={handleSignOut} className="mt-1 flex w-full items-center gap-2 rounded-xl border-t border-ink/10 px-3 py-3 text-left text-sm font-semibold text-red-700 hover:bg-red-50"><LogOut className="size-4" /> Sign out</button>
                 </div>
               )}
             </div>
@@ -278,17 +303,23 @@ export default function Navbar() {
             ))}
           </ul>
           <div className="mt-4 grid grid-cols-2 gap-2.5">
-            {user ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileOpen(false);
-                  signOut();
-                }}
-                className="col-span-2 rounded-full bg-cream py-3 text-center text-sm font-semibold text-ink transition-colors hover:bg-mint"
-              >
-                Sign out
-              </button>
+            {activeUser ? (
+              <>
+                <div className="col-span-2 rounded-2xl border border-cream/10 bg-ink-2/80 px-4 py-3 text-cream">
+                  <strong className="block truncate text-sm">{activeUser.name || "Your account"}</strong>
+                  <small className="mt-1 block text-xs text-cream/55">Product workspace</small>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileOpen(false);
+                    handleSignOut();
+                  }}
+                  className="col-span-2 rounded-full bg-cream py-3 text-center text-sm font-semibold text-ink transition-colors hover:bg-mint"
+                >
+                  Sign out
+                </button>
+              </>
             ) : (
               <>
                 <Link
