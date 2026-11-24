@@ -18,8 +18,10 @@ function getPageLoadingLabel(pathname) {
 export function PageLoadingIndicator({ label = "Loading page" }) {
   return (
     <div className="page-refresh-overlay" role="status" aria-live="polite" aria-atomic="true">
-      <span className="page-refresh-spinner" aria-hidden="true" />
-      <small>{label}</small>
+      <div className="page-refresh-glass-card">
+        <span className="page-refresh-spinner" aria-hidden="true" />
+        <small>{label}</small>
+      </div>
     </div>
   );
 }
