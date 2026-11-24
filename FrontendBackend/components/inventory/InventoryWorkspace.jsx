@@ -173,6 +173,10 @@ export default function InventoryWorkspace({ user, onSignOut }) {
     finally { setBusy(false); }
   }
 
+  if (isLoading) {
+    return <main className="auth-loading" role="status" aria-live="polite"><span className="spinner" />Loading dashboard data…</main>;
+  }
+
   return (
     <div className="inventory-shell">
       <aside className="inventory-sidebar">
@@ -189,8 +193,6 @@ export default function InventoryWorkspace({ user, onSignOut }) {
 
           {notice && <div className="notice-banner" role="status">{notice}<button type="button" onClick={() => setNotice("")} aria-label="Dismiss"><X size={15} /></button></div>}
           {error && <div className="notice-banner error" role="alert">{error.message}</div>}
-          {isLoading && <div className="loading-line" role="status">Loading store data…</div>}
-
           {section === "overview" && <>
             <section className="metric-grid" aria-label="Business summary">
               <Metric icon={Building2} label="Active shops" value={metrics.shopCount ?? "—"} caption="Across your business" />
