@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+
+const dashboardRoutes = ["/inventory", "/admin", "/employee", "/dashboard", "/workspace"];
+
+function isDashboardRoute(pathname) {
+  return dashboardRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+}
 
 function getPageLoadingLabel(pathname) {
-  if (["/inventory", "/admin", "/employee", "/dashboard", "/workspace"].some((route) => pathname === route || pathname.startsWith(`${route}/`))) {
-    return "Loading dashboard";
-  }
-
+  if (isDashboardRoute(pathname)) return "Loading dashboard";
   if (pathname === "/login") return "Loading login";
   return "Loading page";
 }
@@ -21,11 +25,19 @@ export function PageLoadingIndicator({ label = "Loading page" }) {
 }
 
 export default function PageRefreshOverlay() {
+  const pathname = usePathname() || "";
+  const dashboardRoute = isDashboardRoute(pathname);
   const [visible, setVisible] = useState(true);
   const [label, setLabel] = useState("Loading page");
 
   useEffect(() => {
-    setLabel(getPageLoadingLabel(window.location.pathname));
+    const currentPathname = window.location.pathname;
+    setLabel(getPageLoadingLabel(currentPathname));
+
+    if (isDashboardRoute(currentPathname)) {
+      setVisible(false);
+      return;
+    }
 
     let hideTimer;
     const fallbackTimer = window.setTimeout(() => setVisible(false), 4000);
@@ -46,5 +58,5 @@ export default function PageRefreshOverlay() {
     };
   }, []);
 
-  return visible ? <PageLoadingIndicator label={label} /> : null;
+  return visible && !dashboardRoute ? <PageLoadingIndicator label={label} /> : null;
 }
