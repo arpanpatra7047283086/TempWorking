@@ -3,6 +3,8 @@
 import useSWR from "swr";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, AlertTriangle, ArrowDownToLine, ArrowLeftRight, ArrowUpRight, Boxes, Building2, ChevronDown, CircleDollarSign, ClipboardList, LogOut, Package, Plus, Search, ShoppingCart, Users, X } from "lucide-react";
+import InventoryLoadingBackdrop from "./InventoryLoadingBackdrop.jsx";
+import { PageLoadingIndicator } from "../page-refresh-overlay.jsx";
 
 const fetcher = async (url) => { const response = await fetch(url, { cache: "no-store" }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Could not load inventory."); return data; };
 const money = (amount) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(Number(amount) || 0);
@@ -174,7 +176,7 @@ export default function InventoryWorkspace({ user, onSignOut }) {
   }
 
   if (isLoading) {
-    return <main className="auth-loading" role="status" aria-live="polite"><span className="spinner" />Loading dashboard data…</main>;
+    return <><InventoryLoadingBackdrop /><PageLoadingIndicator label="Loading dashboard data…" /></>;
   }
 
   return (
