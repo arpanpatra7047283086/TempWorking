@@ -1,3 +1,4 @@
+
 {
   "name": "upolabdhi",
   "version": "1.0.0",
@@ -6,6 +7,7 @@
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
     "build:vite": "vite build",
     "preview": "vite preview",
     "dev:inventory": "next dev --port 3001",
