@@ -1,4 +1,4 @@
-import { adminEmail, database, issueSession, verifyLoginCode } from "../../../../lib/inventory-server.js";
+import { adminCredentialForEmail, database, issueSession, verifyLoginCode } from "../../../../lib/inventory-server.js";
 import { ObjectId } from "mongodb";
 
 export const runtime = "nodejs";
@@ -13,8 +13,9 @@ export async function POST(request) {
 
     let identity;
     let db;
-    if (email === adminEmail && adminEmail) {
-      identity = { id: "super-admin", role: "SUPER_ADMIN", name: "SS Supplement Admin", email };
+    const adminCredential = await adminCredentialForEmail(email);
+    if (adminCredential) {
+      identity = { id: "super-admin", role: "SUPER_ADMIN", name: "SS Supplement Admin", email: adminCredential.email };
     } else {
       db = await database();
       const employee = await db.collection("employees").findOne({ email, active: true }, { projection: { name: 1, email: 1, shopIds: 1, permissions: 1, sessionVersion: 1 } });
