@@ -185,8 +185,7 @@ export async function POST(request) {
       const product = await products.findOne({ _id: objectId(productId), active: { $ne: false } });
       const batch = await batches.findOne({ _id: objectId(batchId), productId, shopId, active: { $ne: false } });
       if (!product || !batch) return Response.json({ error: "Product or batch not found." }, { status: 404 });
-      if (Number(batch.availableQty || 0) > 0) return Response.json({ error: "This batch still has stock. Record its sale or transfer before deleting it." }, { status: 409 });
-      const archived = await batches.updateOne({ _id: batch._id, availableQty: 0, active: { $ne: false } }, { $set: { active: false, archivedAt: now, updatedAt: now } });
+      const archived = await batches.updateOne({ _id: batch._id, active: { $ne: false } }, { $set: { active: false, archivedAt: now, updatedAt: now } });
       if (!archived.modifiedCount) return Response.json({ error: "Stock changed before the batch could be deleted. Refresh and try again." }, { status: 409 });
       const productArchived = await batches.countDocuments({ productId, active: { $ne: false } }) === 0;
       if (productArchived) await products.updateOne({ _id: product._id, active: { $ne: false } }, { $set: { active: false, archivedAt: now, updatedAt: now } });
