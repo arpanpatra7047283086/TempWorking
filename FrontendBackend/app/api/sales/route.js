@@ -31,7 +31,7 @@ export async function GET(request) {
       db.collection("sales").countDocuments(filter),
       db.collection("sales").aggregate([{ $match: filter }, { $group: { _id: null, revenue: { $sum: "$total" }, count: { $sum: 1 } } }]).toArray(),
     ]);
-    const productIds = [...new Set(sales.map((sale) => sale.productId).filter((id) => safeObjectId(id)))].map((id) => new ObjectId(id));
+    const productIds = [...new Set(sales.flatMap((sale) => [sale.productId, ...(sale.items || []).map((item) => item.productId)]).filter((id) => safeObjectId(id)))].map((id) => new ObjectId(id));
     const shopIds = [...new Set(sales.map((sale) => sale.shopId).filter((id) => safeObjectId(id)))].map((id) => new ObjectId(id));
     const [products, shops] = await Promise.all([
       productIds.length ? db.collection("products").find({ _id: { $in: productIds } }, { projection: { name: 1, sku: 1, category: 1 } }).toArray() : [],
@@ -39,7 +39,10 @@ export async function GET(request) {
     ]);
     const productById = new Map(products.map((product) => [product._id.toString(), product]));
     const shopById = new Map(shops.map((shop) => [shop._id.toString(), shop]));
-    return Response.json({ sales: sales.map((sale) => ({ ...sale, _id: sale._id.toString(), productName: productById.get(sale.productId)?.name || "Unknown product", productSku: productById.get(sale.productId)?.sku || "—", shopName: shopById.get(sale.shopId)?.name || "Unknown shop" })), page, pageCount: Math.ceil(total / pageLimit), total, summary: summary[0] || { revenue: 0, count: 0 } });
+    return Response.json({ sales: sales.map((sale) => {
+      const items = sale.items?.map((item) => ({ ...item, productName: item.productName || productById.get(item.productId)?.name || "Unknown product", productSku: item.productSku || productById.get(item.productId)?.sku || "—" }));
+      return { ...sale, _id: sale._id.toString(), items, productName: items?.length ? items.map((item) => item.productName).join(", ") : productById.get(sale.productId)?.name || "Unknown product", productSku: items?.length ? items.map((item) => item.productSku).join(", ") : productById.get(sale.productId)?.sku || "—", shopName: shopById.get(sale.shopId)?.name || "Unknown shop" };
+    }), page, pageCount: Math.ceil(total / pageLimit), total, summary: summary[0] || { revenue: 0, count: 0 } });
   } catch (error) {
     console.error("Sales report failed:", error);
     return Response.json({ error: "Sales data is temporarily unavailable." }, { status: 500 });
