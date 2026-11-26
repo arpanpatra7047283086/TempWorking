@@ -8,7 +8,6 @@ import Layout from "./components/Layout.jsx";
 import About from "./views/About.jsx";
 import Contact from "./views/Contact.jsx";
 import FAQs from "./views/FAQs.jsx";
-import Login from "./views/Login.jsx";
 import Register from "./views/Register.jsx";
 import ForgotPassword from "./views/ForgotPassword.jsx";
 import NotFound from "./views/NotFound.jsx";
@@ -34,7 +33,6 @@ export default function SpaRoot() {
               <Route path="about" element={<About />} />
               <Route path="contact" element={<Contact />} />
               <Route path="faqs" element={<FAQs />} />
-              <Route path="login" element={<Login />} />
               <Route path="register" element={<Register />} />
               <Route path="forgot-password" element={<ForgotPassword />} />
               <Route path="dashboard" element={<InventoryRedirect />} />
