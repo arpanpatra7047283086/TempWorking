@@ -95,7 +95,10 @@ export async function POST(request) {
     }
 
     const shopId = String(body.shopId || "");
-    if (!safeObjectId(shopId) || !await canUseShop(identity, shopId, body.action === "sale" ? "sales" : body.action === "purchase" ? "purchases" : "inventory")) return Response.json({ error: "Forbidden" }, { status: 403 });
+    const allowedShop = body.action === "sale"
+      ? await canUseShop(identity, shopId) && (identity.role === "SUPER_ADMIN" || ["sales", "billing"].some((permission) => identity.permissions?.includes(permission)))
+      : await canUseShop(identity, shopId, body.action === "purchase" ? "purchases" : "inventory");
+    if (!safeObjectId(shopId) || !allowedShop) return Response.json({ error: "Forbidden" }, { status: 403 });
     const shop = await shops.findOne({ _id: objectId(shopId), active: { $ne: false } });
     if (!shop) return Response.json({ error: "Shop not found or inactive." }, { status: 404 });
 
