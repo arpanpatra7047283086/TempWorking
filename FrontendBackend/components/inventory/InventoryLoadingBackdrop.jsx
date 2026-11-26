@@ -1,4 +1,4 @@
-const navigationItems = ["Shop Dashboard", "Shops", "Employees", "Transfers", "Inventory", "Billing", "Expiry", "Activity"];
+const navigationItems = ["Shop Dashboard", "Shops", "Employees", "Transfers", "Products", "Billing", "Expiry", "Activity"];
 
 export default function InventoryLoadingBackdrop() {
   return (
