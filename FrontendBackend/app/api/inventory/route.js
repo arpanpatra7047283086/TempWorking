@@ -95,7 +95,10 @@ export async function POST(request) {
     }
 
     const shopId = String(body.shopId || "");
-    if (!safeObjectId(shopId) || !await canUseShop(identity, shopId, body.action === "sale" ? "sales" : body.action === "purchase" ? "purchases" : "inventory")) return Response.json({ error: "Forbidden" }, { status: 403 });
+    const allowedShop = body.action === "sale"
+      ? await canUseShop(identity, shopId) && (identity.role === "SUPER_ADMIN" || ["sales", "billing"].some((permission) => identity.permissions?.includes(permission)))
+      : await canUseShop(identity, shopId, body.action === "purchase" ? "purchases" : "inventory");
+    if (!safeObjectId(shopId) || !allowedShop) return Response.json({ error: "Forbidden" }, { status: 403 });
     const shop = await shops.findOne({ _id: objectId(shopId), active: { $ne: false } });
     if (!shop) return Response.json({ error: "Shop not found or inactive." }, { status: 404 });
 
@@ -232,49 +235,64 @@ export async function POST(request) {
     }
 
     if (body.action === "sale") {
-      const productId = String(body.productId || "");
-      const quantity = Number(body.quantity);
-      if (!safeObjectId(productId) || !numeric(quantity)) return Response.json({ error: "Product and a positive whole quantity are required." }, { status: 400 });
-      if (!Number.isInteger(quantity)) return Response.json({ error: "Quantity must be a whole number." }, { status: 400 });
-      const product = await products.findOne({ _id: objectId(productId), active: true });
-      if (!product) return Response.json({ error: "Product not found." }, { status: 404 });
-      if (quantity > 1000000) return Response.json({ error: "Quantity exceeds the allowed limit." }, { status: 400 });
+      const requestedItems = Array.isArray(body.items) ? body.items : [{ productId: body.productId, quantity: body.quantity }];
+      if (!requestedItems.length || requestedItems.length > 100) return Response.json({ error: "Add between 1 and 100 products to this bill." }, { status: 400 });
+      const quantitiesByProduct = new Map();
+      for (const item of requestedItems) {
+        const productId = String(item?.productId || "");
+        const quantity = Number(item?.quantity);
+        if (!safeObjectId(productId) || !numeric(quantity) || !Number.isInteger(quantity)) return Response.json({ error: "Each product needs a valid positive whole quantity." }, { status: 400 });
+        quantitiesByProduct.set(productId, (quantitiesByProduct.get(productId) || 0) + quantity);
+      }
+      if ([...quantitiesByProduct.values()].some((quantity) => quantity > 1000000)) return Response.json({ error: "A product quantity exceeds the allowed limit." }, { status: 400 });
+      const productIds = [...quantitiesByProduct.keys()];
+      const productRows = await products.find({ _id: { $in: productIds.map(objectId) }, active: true }).toArray();
+      if (productRows.length !== productIds.length) return Response.json({ error: "One or more selected products are unavailable." }, { status: 404 });
+      const productById = new Map(productRows.map((product) => [product._id.toString(), product]));
       const discount = Number(body.discount || 0);
       const taxPercent = Number(body.taxPercent || 0);
       const paymentMethod = String(body.paymentMethod || "cash");
-      if (!numeric(discount, 0) || discount > 10000000 || !numeric(taxPercent, 0) || taxPercent > 28 || !["cash", "upi", "card", "bank"].includes(paymentMethod)) return Response.json({ error: "Invalid discount, tax, or payment method." }, { status: 400 });
+      const customerName = String(body.customerName || "").trim().slice(0, 120);
+      const customerPhone = String(body.customerPhone || "").trim().slice(0, 24);
+      const customerAddress = String(body.customerAddress || "").trim().slice(0, 500);
+      if (!numeric(discount, 0) || discount > 10000000 || !numeric(taxPercent, 0) || taxPercent > 28 || !["cash", "upi", "card", "bank"].includes(paymentMethod) || (body.items && (!customerName || customerPhone.length < 5))) return Response.json({ error: "Enter customer name and phone, and a valid discount, tax, and payment method." }, { status: 400 });
       if (discount > 0 && identity.role !== "SUPER_ADMIN" && !identity.permissions?.includes("billing")) return Response.json({ error: "Discounts require billing permission." }, { status: 403 });
       const client = db.client;
       const session = client.startSession();
-      let saleId;
-      let invoiceNumber;
-      let saleTotal = 0;
+      let sale;
       try {
         await session.withTransaction(async () => {
-          const eligible = await batches.find({ shopId, productId, availableQty: { $gt: 0 }, expiryDate: { $gt: now } }, { session }).sort({ expiryDate: 1, createdAt: 1 }).toArray();
-          if (eligible.reduce((sum, batch) => sum + batch.availableQty, 0) < quantity) throw new Error("Insufficient unexpired stock.");
-          let remaining = quantity;
-          let subtotal = 0;
-          for (const batch of eligible) {
-            if (!remaining) break;
-            const take = Math.min(remaining, batch.availableQty);
-            const result = await batches.updateOne({ _id: batch._id, availableQty: { $gte: take } }, { $inc: { availableQty: -take, soldQty: take }, $set: { updatedAt: now } }, { session });
-            if (!result.modifiedCount) throw new Error("Stock changed during sale; retry the transaction.");
-            const unitPrice = Number(batch.unitPrice) || Number(product.unitPrice) || 0;
-            subtotal += unitPrice * take;
-            remaining -= take;
+          const lineItems = [];
+          for (const [productId, quantity] of quantitiesByProduct) {
+            const product = productById.get(productId);
+            const eligible = await batches.find({ shopId, productId, availableQty: { $gt: 0 }, expiryDate: { $gt: now } }, { session }).sort({ expiryDate: 1, createdAt: 1 }).toArray();
+            if (eligible.reduce((sum, batch) => sum + batch.availableQty, 0) < quantity) throw new Error(`Insufficient unexpired stock for ${product.name}.`);
+            let remaining = quantity;
+            let lineSubtotal = 0;
+            for (const batch of eligible) {
+              if (!remaining) break;
+              const take = Math.min(remaining, batch.availableQty);
+              const result = await batches.updateOne({ _id: batch._id, availableQty: { $gte: take } }, { $inc: { availableQty: -take, soldQty: take }, $set: { updatedAt: now } }, { session });
+              if (!result.modifiedCount) throw new Error("Stock changed during sale; retry the transaction.");
+              const unitPrice = Number(batch.unitPrice) || Number(product.unitPrice) || 0;
+              lineSubtotal += unitPrice * take;
+              remaining -= take;
+            }
+            lineItems.push({ productId, productName: product.name, productSku: product.sku || "", quantity, subtotal: Math.round(lineSubtotal * 100) / 100 });
           }
+          const subtotal = Math.round(lineItems.reduce((sum, item) => sum + item.subtotal, 0) * 100) / 100;
           const taxableAmount = Math.max(0, subtotal - discount);
-          const taxAmount = taxableAmount * taxPercent / 100;
+          const taxAmount = Math.round(taxableAmount * taxPercent) / 100;
           const total = Math.round((taxableAmount + taxAmount) * 100) / 100;
-          saleTotal = total;
-          saleId = new ObjectId();
-          invoiceNumber = `SS-${now.toISOString().slice(0, 10).replaceAll("-", "")}-${saleId.toString().slice(-6).toUpperCase()}`;
-          await db.collection("sales").insertOne({ _id: saleId, invoiceNumber, shopId, productId, quantity, subtotal, discount, taxPercent, taxAmount, total, customerName: String(body.customerName || "").trim().slice(0, 120), paymentMethod, createdAt: now, actorId: identity.id, actorName: identity.name }, { session });
-          await audit.insertOne({ action: "SALE_COMPLETED", actorId: identity.id, actorName: identity.name, actorRole: identity.role, shopId, reference: saleId.toString(), createdAt: now, changes: { product: product.name, quantity, subtotal, discount, taxPercent, total, invoiceNumber } }, { session });
+          const saleId = new ObjectId();
+          const invoiceNumber = `SS-${now.toISOString().slice(0, 10).replaceAll("-", "")}-${saleId.toString().slice(-6).toUpperCase()}`;
+          const quantity = lineItems.reduce((sum, item) => sum + item.quantity, 0);
+          sale = { _id: saleId.toString(), invoiceNumber, shopId, shopName: shop.name, productId: lineItems[0].productId, productName: lineItems.map((item) => item.productName).join(", "), productSku: lineItems.map((item) => item.productSku).filter(Boolean).join(", "), quantity, items: lineItems, subtotal, discount, taxPercent, taxAmount, total, customerName, customerPhone, customerAddress, paymentMethod, createdAt: now.toISOString(), actorId: identity.id, actorName: identity.name };
+          await db.collection("sales").insertOne({ ...sale, _id: saleId }, { session });
+          await audit.insertOne({ action: "SALE_COMPLETED", actorId: identity.id, actorName: identity.name, actorRole: identity.role, shopId, reference: saleId.toString(), createdAt: now, changes: { products: lineItems.map(({ productName, quantity }) => ({ product: productName, quantity })), quantity, subtotal, taxPercent, total, invoiceNumber } }, { session });
         });
       } finally { await session.endSession(); }
-      return Response.json({ ok: true, id: saleId.toString(), invoiceNumber, total: saleTotal }, { status: 201 });
+      return Response.json({ ok: true, id: sale._id, invoiceNumber: sale.invoiceNumber, total: sale.total, sale }, { status: 201 });
     }
     return Response.json({ error: "Unsupported inventory action." }, { status: 400 });
   } catch (error) {
