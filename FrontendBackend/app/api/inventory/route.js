@@ -40,7 +40,7 @@ export async function GET(request) {
     const salesFilter = { ...shopFilter, createdAt: { $gte: dayStart() } };
     const [products, batches, purchasesToday, salesSummary, recentActivity, activeEmployees, pendingDispatches] = await Promise.all([
       db.collection("products").find({ active: { $ne: false } }).sort({ name: 1 }).limit(10000).toArray(),
-      db.collection("product_batches").find(shopFilter).limit(10000).toArray(),
+      db.collection("product_batches").find({ ...shopFilter, active: { $ne: false } }).limit(10000).toArray(),
       db.collection("purchases").countDocuments({ ...shopFilter, createdAt: { $gte: dayStart() } }),
       db.collection("sales").aggregate([{ $match: salesFilter }, { $group: { _id: null, count: { $sum: 1 }, revenue: { $sum: "$total" } } }]).toArray(),
       identity.role === "SUPER_ADMIN" ? db.collection("audit_logs").find(selectedShop ? { shopId: selectedShop } : {}).sort({ createdAt: -1 }).limit(12).toArray() : db.collection("audit_logs").find({ ...shopFilter, actorId: identity.id }).sort({ createdAt: -1 }).limit(12).toArray(),
@@ -113,6 +113,47 @@ export async function POST(request) {
       return Response.json({ ok: true, id: result.insertedId.toString() }, { status: 201 });
     }
 
+    if (body.action === "edit-product-batch") {
+      if (identity.role !== "SUPER_ADMIN" && !identity.permissions?.includes("inventory")) return Response.json({ error: "Forbidden" }, { status: 403 });
+      const productId = String(body.productId || "");
+      const batchId = String(body.batchId || "");
+      if (!safeObjectId(productId) || !safeObjectId(batchId)) return Response.json({ error: "Product or batch not found." }, { status: 404 });
+      const product = await products.findOne({ _id: objectId(productId), active: { $ne: false } });
+      const batch = await batches.findOne({ _id: objectId(batchId), productId, shopId, active: { $ne: false } });
+      if (!product || !batch) return Response.json({ error: "Product or batch not found." }, { status: 404 });
+      const name = String(body.name || "").trim();
+      const category = String(body.category || "").trim();
+      const sku = String(body.sku || "").trim().toUpperCase();
+      const barcode = String(body.barcode || "").trim();
+      const batchNumber = String(body.batchNumber || "").trim();
+      const supplier = String(body.supplier || "").trim();
+      const unitPrice = Number(body.unitPrice);
+      const expiryDate = body.expiryDate ? new Date(body.expiryDate) : null;
+      const manufacturingDate = body.manufacturingDate ? new Date(body.manufacturingDate) : null;
+      if (name.length < 2 || name.length > 140 || !category || category.length > 80 || batchNumber.length < 1 || batchNumber.length > 60 || supplier.length > 120 || !numeric(unitPrice, 0.01) || unitPrice > 10000000 || !expiryDate || Number.isNaN(expiryDate.getTime()) || (manufacturingDate && Number.isNaN(manufacturingDate.getTime())) || expiryDate <= new Date(batch.purchaseDate || batch.createdAt || 0) || (manufacturingDate && manufacturingDate >= expiryDate)) return Response.json({ error: "Enter valid product details, batch number, price, and dates." }, { status: 400 });
+      const productChanges = { name, category, brand: String(body.brand || "").trim().slice(0, 80), unitPrice, updatedAt: now };
+      if (sku) productChanges.sku = sku;
+      if (barcode) productChanges.barcode = barcode;
+      await products.updateOne({ _id: product._id }, { $set: productChanges, $unset: { ...(sku ? {} : { sku: "" }), ...(barcode ? {} : { barcode: "" }) } });
+      await batches.updateOne({ _id: batch._id }, { $set: { batchNumber, supplier, unitPrice, expiryDate, manufacturingDate, updatedAt: now } });
+      await audit.insertOne({ action: "PRODUCT_BATCH_UPDATED", actorId: identity.id, actorName: identity.name, actorRole: identity.role, shopId, createdAt: now, changes: { product: name, batchNumber, unitPrice } });
+      return Response.json({ ok: true });
+    }
+
+    if (body.action === "archive-product-batch") {
+      if (identity.role !== "SUPER_ADMIN" && !identity.permissions?.includes("inventory")) return Response.json({ error: "Forbidden" }, { status: 403 });
+      const productId = String(body.productId || "");
+      const batchId = String(body.batchId || "");
+      if (!safeObjectId(productId) || !safeObjectId(batchId)) return Response.json({ error: "Product or batch not found." }, { status: 404 });
+      const batch = await batches.findOne({ _id: objectId(batchId), productId, shopId, active: { $ne: false } });
+      if (!batch) return Response.json({ error: "Product or batch not found." }, { status: 404 });
+      if (Number(batch.availableQty || 0) > 0) return Response.json({ error: "This batch still has stock. Record its sale or transfer before deleting it." }, { status: 409 });
+      const archived = await batches.updateOne({ _id: batch._id, availableQty: 0, active: { $ne: false } }, { $set: { active: false, archivedAt: now, updatedAt: now } });
+      if (!archived.modifiedCount) return Response.json({ error: "Stock changed before the batch could be deleted. Refresh and try again." }, { status: 409 });
+      await audit.insertOne({ action: "PRODUCT_BATCH_ARCHIVED", actorId: identity.id, actorName: identity.name, actorRole: identity.role, shopId, createdAt: now, changes: { product: String(body.productName || "Product"), batchNumber: batch.batchNumber } });
+      return Response.json({ ok: true });
+    }
+
     if (body.action === "purchase") {
       const productId = String(body.productId || "");
       const quantity = Number(body.quantity);
@@ -140,7 +181,7 @@ export async function POST(request) {
           const result = await batches.updateOne(batchFilter, {
             $setOnInsert: { ...batchFilter, expiryDate, manufacturingDate, purchaseDate, unitPrice, supplier: String(body.supplier || "").trim(), createdAt: now },
             $inc: { availableQty: quantity, purchasedQty: quantity },
-            $set: { unitCost: weightedCost, unitPrice, updatedAt: now },
+            $set: { unitCost: weightedCost, unitPrice, active: true, updatedAt: now },
           }, { upsert: true, session });
           purchaseId = new ObjectId();
           await db.collection("purchases").insertOne({ _id: purchaseId, shopId, productId, batchNumber, quantity, unitCost, unitPrice, supplier: String(body.supplier || "").trim(), invoiceNumber: String(body.invoiceNumber || "").trim(), purchaseDate, paymentStatus: String(body.paymentStatus || "unpaid"), createdAt: now, actorId: identity.id, actorName: identity.name }, { session });
