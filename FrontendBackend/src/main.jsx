@@ -8,6 +8,7 @@ import Layout from "./components/Layout.jsx";
 import About from "./views/About.jsx";
 import Contact from "./views/Contact.jsx";
 import FAQs from "./views/FAQs.jsx";
+import Login from "./views/Login.jsx";
 import Register from "./views/Register.jsx";
 import ForgotPassword from "./views/ForgotPassword.jsx";
 import NotFound from "./views/NotFound.jsx";
@@ -39,7 +40,9 @@ export default function SpaRoot() {
               <Route path="workspace" element={<InventoryRedirect />} />
               <Route path="*" element={<NotFound />} />
             </Route>
+            <Route path="/login" element={<Login />} />
           </Routes>
+
         </UIProvider>
       </AuthProvider>
     </BrowserRouter>
