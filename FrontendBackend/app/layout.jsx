@@ -1,3 +1,4 @@
+import "../src/index.css";
 import "./inventory.css";
 import "./page-loading.css";
 import PageRefreshOverlay from "../components/page-refresh-overlay.jsx";

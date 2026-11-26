@@ -1,7 +1,12 @@
-import AuthPanel from "../../components/inventory/AuthPanel.jsx";
+"use client";
 
-// This route deliberately uses the SS Supplement auth flow, not the legacy Vite/Upolabdhi login.
-// Successful verification routes administrators to /admin and employees to /employee.
+import dynamic from "next/dynamic";
+
+const LoginWithRouter = dynamic(
+  () => import("../../components/auth/LoginWithRouter.jsx"),
+  { ssr: false },
+);
+
 export default function LoginPage() {
-  return <AuthPanel />;
+  return <LoginWithRouter />;
 }
